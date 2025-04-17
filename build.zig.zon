@@ -1,5 +1,7 @@
 .{
-    .name = "simple-cellular-automaton",
+    .name = .SimpleCellularAutomaton,
+
+    .fingerprint = 0x503898e848e0925a,
 
     .version = "0.0.0",
 

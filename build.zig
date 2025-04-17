@@ -2,7 +2,9 @@ const std = @import("std");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
-    const optimize = b.standardOptimizeOption(.{});
+    const optimize = b.standardOptimizeOption(.{
+        .preferred_optimize_mode = .Debug,
+    });
 
     const exe = b.addExecutable(.{
         .name = "simple-cellular-automaton",
@@ -11,8 +13,11 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     exe.linkLibC();
-    exe.addLibraryPath(.{ .cwd_relative = "/usr/local/cuda/lib64" });
-    exe.linkSystemLibrary2("OpenCL", .{ .needed = true, });
+    exe.linkLibCpp();
+
+    exe.linkSystemLibrary("OpenCL");
+
+    exe.linkSystemLibrary("SDL3");
 
     b.installArtifact(exe);
 }
