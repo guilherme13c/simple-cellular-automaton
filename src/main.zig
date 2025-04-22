@@ -26,7 +26,7 @@ pub fn main() !void {
     const program = try cl.CLProgram.init(ctx, device, update_kernel_src);
     defer program.free();
 
-    const kernel = try cl.CLKernel.init(program, "update_grid");
+    const kernel = try cl.CLKernel.init(program, "update");
     defer kernel.free();
 
     const input_buffer = try cl.CLBuffer.init(grid_size * @sizeOf(u32), ctx);
@@ -77,23 +77,23 @@ pub fn main() !void {
     }
     defer sdl.c.SDL_DestroyRenderer(renderer);
 
-    var allocator = std.heap.page_allocator;
-    const host_grid = try allocator.alloc(u8, grid_size);
-    defer allocator.free(host_grid);
-
-    for (host_grid) |*cell| {
-        cell.* = if (std.crypto.random.int(u8) % 4 == 0) 1 else 0;
-    }
+    const host_grid = init_grid: {
+        var init_values: [grid_size]u32 = undefined;
+        for (0..grid_size) |i| {
+            init_values[i] = if (std.crypto.random.int(u8) % 4 == 0) 1 else 0;
+        }
+        break :init_grid init_values;
+    };
 
     var event: sdl.c.SDL_Event = undefined;
     var running = true;
     while (running) {
         {
-            try input_buffer.write(host_grid.ptr, command_queue);
+            try input_buffer.write(@ptrCast(@constCast(&host_grid)), command_queue);
 
             try kernel_call.call();
 
-            try output_buffer.read(host_grid.ptr, command_queue);
+            try output_buffer.read(@ptrCast(@constCast(&host_grid)), command_queue);
         }
 
         while (sdl.c.SDL_PollEvent(&event)) {

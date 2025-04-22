@@ -33,6 +33,6 @@ pub fn build(b: *std.Build) void {
     clTests.linkSystemLibrary("OpenCL");
 
     const runClTests = b.addRunArtifact(clTests);
-    const clTestStep = b.step("cl tests", "run opencl wrapper tests");
-    clTestStep.dependOn(&runClTests.step);
+    const tests = b.step("cl tests", "run opencl wrapper tests");
+    tests.dependOn(&runClTests.step);
 }

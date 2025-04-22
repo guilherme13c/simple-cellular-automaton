@@ -200,8 +200,6 @@ pub const CLKernel = struct {
     kernel: c.cl_kernel,
 
     pub fn init(program: CLProgram, kernel_name: []const u8) CLError!CLKernel {
-        info("{any}", .{program.program});
-
         const kernel = c.clCreateKernel(program.program, @ptrCast(kernel_name), null);
         if (kernel == null) {
             return CLError.CreateKernelFailed;
