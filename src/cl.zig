@@ -21,7 +21,7 @@ pub const CLError = error{
     CreateKernelFailed,
     FreeKernelFailed,
     SetKernelArgFailed,
-    EnqueueNDRangeKernel,
+    EnqueueNDRangeKernelFailed,
     CreateBufferFailed,
     EnqueueWriteBufferFailed,
     EnqueueReadBufferFailed,
@@ -33,44 +33,36 @@ pub fn cl_get_device() CLError!c.cl_device_id {
     if (c.clGetPlatformIDs(platform_ids.len, &platform_ids, &platform_count) != c.CL_SUCCESS) {
         return CLError.GetPlatformsFailed;
     }
-    info("{} cl platform(s) found:", .{@as(u32, platform_count)});
 
-    for (platform_ids[0..platform_count], 0..) |id, i| {
+    for (platform_ids[0..platform_count]) |id| {
         var name: [1024]u8 = undefined;
         var name_len: usize = undefined;
         if (c.clGetPlatformInfo(id, c.CL_PLATFORM_NAME, name.len, &name, &name_len) != c.CL_SUCCESS) {
             return CLError.GetPlatformInfoFailed;
         }
-        info("  platform {}: {s}", .{ i, name[0..name_len] });
     }
 
     if (platform_count == 0) {
         return CLError.NoPlatformsFound;
     }
 
-    info("choosing platform 0...", .{});
-
     var device_ids: [16]c.cl_device_id = undefined;
     var device_count: c.cl_uint = undefined;
     if (c.clGetDeviceIDs(platform_ids[0], c.CL_DEVICE_TYPE_ALL, device_ids.len, &device_ids, &device_count) != c.CL_SUCCESS) {
         return CLError.GetDevicesFailed;
     }
-    info("{} cl device(s) found on platform 0:", .{@as(u32, device_count)});
 
-    for (device_ids[0..device_count], 0..) |id, i| {
+    for (device_ids[0..device_count]) |id| {
         var name: [1024]u8 = undefined;
         var name_len: usize = undefined;
         if (c.clGetDeviceInfo(id, c.CL_DEVICE_NAME, name.len, &name, &name_len) != c.CL_SUCCESS) {
             return CLError.GetDeviceInfoFailed;
         }
-        info("  device {}: {s}", .{ i, name[0..name_len] });
     }
 
     if (device_count == 0) {
         return CLError.NoDevicesFound;
     }
-
-    info("choosing device 0...", .{});
 
     return device_ids[0];
 }
@@ -208,6 +200,8 @@ pub const CLKernel = struct {
     kernel: c.cl_kernel,
 
     pub fn init(program: CLProgram, kernel_name: []const u8) CLError!CLKernel {
+        info("{any}", .{program.program});
+
         const kernel = c.clCreateKernel(program.program, @ptrCast(kernel_name), null);
         if (kernel == null) {
             return CLError.CreateKernelFailed;
@@ -224,7 +218,7 @@ pub const CLKernel = struct {
 
 pub const CLKernelCall = struct {
     const Self = @This();
-    const ArgType = union(enum) {
+    pub const ArgType = union(enum) {
         int: i32,
         float: f32,
         buffer: CLBuffer,
@@ -259,7 +253,7 @@ pub const CLKernelCall = struct {
             }
         }
         if (c.clEnqueueNDRangeKernel(self.queue.queue, self.kernel.kernel, self.work_dim, null, &self.global_work_size, &self.local_work_size, 0, null, null) != c.CL_SUCCESS) {
-            return CLError.EnqueueNDRangeKernel;
+            return CLError.EnqueueNDRangeKernelFailed;
         }
     }
 };
