@@ -16,9 +16,7 @@ pub fn build(b: *std.Build) void {
     });
     exe.linkLibC();
     exe.linkLibCpp();
-
     exe.linkSystemLibrary("OpenCL");
-
     exe.linkSystemLibrary("SDL3");
 
     b.installArtifact(exe);
@@ -27,10 +25,12 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/cl.zig"),
         .target = target,
         .optimize = optimize,
+        .error_tracing = true,
     });
     clTests.linkLibC();
     clTests.linkLibCpp();
     clTests.linkSystemLibrary("OpenCL");
+    clTests.linkSystemLibrary("SDL3");
 
     const runClTests = b.addRunArtifact(clTests);
     const tests = b.step("cl tests", "run opencl wrapper tests");

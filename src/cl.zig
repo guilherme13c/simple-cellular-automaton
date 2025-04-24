@@ -89,15 +89,33 @@ pub const CLBuffer = struct {
     }
 
     pub fn read(self: Self, h_buff: ?*anyopaque, cmd_queue: CLQueue) CLError!void {
-        // Fill input buffer
-        if (c.clEnqueueReadBuffer(cmd_queue.queue, self.d_buff, c.CL_TRUE, 0, self.size, h_buff, 0, null, null) != c.CL_SUCCESS) {
+        if (c.clEnqueueReadBuffer(
+            cmd_queue.queue,
+            self.d_buff,
+            c.CL_TRUE,
+            0,
+            self.size,
+            h_buff,
+            0,
+            null,
+            null,
+        ) != c.CL_SUCCESS) {
             return CLError.EnqueueReadBufferFailed;
         }
     }
 
     pub fn write(self: Self, h_buff: ?*const anyopaque, cmd_queue: CLQueue) CLError!void {
-        // Fill input buffer
-        if (c.clEnqueueWriteBuffer(cmd_queue.queue, self.d_buff, c.CL_TRUE, 0, self.size, h_buff, 0, null, null) != c.CL_SUCCESS) {
+        if (c.clEnqueueWriteBuffer(
+            cmd_queue.queue,
+            self.d_buff,
+            c.CL_TRUE,
+            0,
+            self.size,
+            h_buff,
+            0,
+            null,
+            null,
+        ) != c.CL_SUCCESS) {
             return CLError.EnqueueWriteBufferFailed;
         }
     }
@@ -218,6 +236,7 @@ pub const CLKernelCall = struct {
     const Self = @This();
     pub const ArgType = union(enum) {
         int: i32,
+        uint: u32,
         float: f32,
         buffer: CLBuffer,
     };
@@ -238,6 +257,11 @@ pub const CLKernelCall = struct {
                         return CLError.SetKernelArgFailed;
                     }
                 },
+                .uint => |v| {
+                    if (c.clSetKernelArg(self.kernel.kernel, @intCast(i), @sizeOf(u32), &v) != c.CL_SUCCESS) {
+                        return CLError.SetKernelArgFailed;
+                    }
+                },
                 .float => |v| {
                     if (c.clSetKernelArg(self.kernel.kernel, @intCast(i), @sizeOf(f32), &v) != c.CL_SUCCESS) {
                         return CLError.SetKernelArgFailed;
@@ -250,7 +274,19 @@ pub const CLKernelCall = struct {
                 },
             }
         }
-        if (c.clEnqueueNDRangeKernel(self.queue.queue, self.kernel.kernel, self.work_dim, null, &self.global_work_size, &self.local_work_size, 0, null, null) != c.CL_SUCCESS) {
+        const errEnqueueKernel = c.clEnqueueNDRangeKernel(
+            self.queue.queue,
+            self.kernel.kernel,
+            self.work_dim,
+            null,
+            &self.global_work_size,
+            &self.local_work_size,
+            0,
+            null,
+            null,
+        );
+        if (errEnqueueKernel != c.CL_SUCCESS) {
+            std.debug.print("{}\n", .{errEnqueueKernel});
             return CLError.EnqueueNDRangeKernelFailed;
         }
     }
@@ -266,7 +302,7 @@ test "test OpenCL kernel" {
     ;
 
     const device = try cl_get_device();
-    const ctx = c.clCreateContext(null, 1, &device, null, null, null); // future: last arg is error code
+    const ctx = c.clCreateContext(null, 1, &device, null, null, null);
     if (ctx == null) {
         return CLError.CreateContextFailed;
     }
@@ -288,7 +324,7 @@ test "test OpenCL kernel call" {
     ;
 
     const device = try cl_get_device();
-    const ctx = c.clCreateContext(null, 1, &device, null, null, null); // future: last arg is error code
+    const ctx = c.clCreateContext(null, 1, &device, null, null, null);
     if (ctx == null) {
         return CLError.CreateContextFailed;
     }
@@ -300,7 +336,6 @@ test "test OpenCL kernel call" {
     const kernel = try CLKernel.init(program, "square_array");
     defer kernel.free();
 
-    // Create buffers
     var input_array = init: {
         var init_value: [1024]i32 = undefined;
         for (0..1024) |i| {
