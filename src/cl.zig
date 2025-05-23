@@ -1,5 +1,5 @@
 const std = @import("std");
-const info = std.log.info;
+const log = std.log;
 
 pub const c = @cImport({
     @cDefine("CL_TARGET_OPENCL_VERSION", "130");
@@ -30,14 +30,19 @@ pub const CLError = error{
 pub fn cl_get_device() CLError!c.cl_device_id {
     var platform_ids: [16]c.cl_platform_id = undefined;
     var platform_count: c.cl_uint = undefined;
-    if (c.clGetPlatformIDs(platform_ids.len, &platform_ids, &platform_count) != c.CL_SUCCESS) {
+    var status: c_int = undefined;
+
+    status = c.clGetPlatformIDs(platform_ids.len, &platform_ids, &platform_count);
+    if (status != c.CL_SUCCESS) {
         return CLError.GetPlatformsFailed;
     }
 
     for (platform_ids[0..platform_count]) |id| {
         var name: [1024]u8 = undefined;
         var name_len: usize = undefined;
-        if (c.clGetPlatformInfo(id, c.CL_PLATFORM_NAME, name.len, &name, &name_len) != c.CL_SUCCESS) {
+
+        status = c.clGetPlatformInfo(id, c.CL_PLATFORM_NAME, name.len, &name, &name_len);
+        if (status != c.CL_SUCCESS) {
             return CLError.GetPlatformInfoFailed;
         }
     }
@@ -48,14 +53,18 @@ pub fn cl_get_device() CLError!c.cl_device_id {
 
     var device_ids: [16]c.cl_device_id = undefined;
     var device_count: c.cl_uint = undefined;
-    if (c.clGetDeviceIDs(platform_ids[0], c.CL_DEVICE_TYPE_ALL, device_ids.len, &device_ids, &device_count) != c.CL_SUCCESS) {
+
+    status = c.clGetDeviceIDs(platform_ids[0], c.CL_DEVICE_TYPE_ALL, device_ids.len, &device_ids, &device_count);
+    if (status != c.CL_SUCCESS) {
         return CLError.GetDevicesFailed;
     }
 
     for (device_ids[0..device_count]) |id| {
         var name: [1024]u8 = undefined;
         var name_len: usize = undefined;
-        if (c.clGetDeviceInfo(id, c.CL_DEVICE_NAME, name.len, &name, &name_len) != c.CL_SUCCESS) {
+
+        status = c.clGetDeviceInfo(id, c.CL_DEVICE_NAME, name.len, &name, &name_len);
+        if (status != c.CL_SUCCESS) {
             return CLError.GetDeviceInfoFailed;
         }
     }
@@ -175,7 +184,7 @@ pub const CLProgram = struct {
     program: c.cl_program,
 
     pub fn init(ctx: c.cl_context, device: c.cl_device_id, program_src_c: []const u8) CLError!Self {
-        const program = c.clCreateProgramWithSource(ctx, 1, @ptrCast(@constCast(&program_src_c.ptr)), null, null); // future: last arg is error code
+        const program = c.clCreateProgramWithSource(ctx, 1, @ptrCast(@constCast(&program_src_c.ptr)), null, null);
         if (program == null) {
             return CLError.CreateProgramFailed;
         }
@@ -370,7 +379,6 @@ test "test OpenCL kernel call" {
     for (output_array, 0..) |val, i| {
         if (i % 100 == 0) {
             try std.testing.expect(val == (i * i));
-            info("{} ^ 2 = {}", .{ i, val });
         }
     }
 }

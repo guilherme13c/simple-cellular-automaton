@@ -3,7 +3,7 @@ const std = @import("std");
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{
-        .preferred_optimize_mode = .Debug,
+        .preferred_optimize_mode = .ReleaseSafe,
     });
 
     const exe = b.addExecutable(.{
@@ -15,7 +15,6 @@ pub fn build(b: *std.Build) void {
         .version = .{ .major = 0, .minor = 1, .patch = 0 },
     });
     exe.linkLibC();
-    exe.linkLibCpp();
     exe.linkSystemLibrary("OpenCL");
     exe.linkSystemLibrary("SDL3");
 
@@ -28,11 +27,18 @@ pub fn build(b: *std.Build) void {
         .error_tracing = true,
     });
     clTests.linkLibC();
-    clTests.linkLibCpp();
     clTests.linkSystemLibrary("OpenCL");
     clTests.linkSystemLibrary("SDL3");
 
     const runClTests = b.addRunArtifact(clTests);
     const tests = b.step("cl tests", "run opencl wrapper tests");
     tests.dependOn(&runClTests.step);
+
+    const run_exe = b.addRunArtifact(exe);
+    if (b.args) |args| {
+        run_exe.addArgs(args);
+    }
+
+    const run_step = b.step("run", "Run the application");
+    run_step.dependOn(&run_exe.step);
 }

@@ -4,15 +4,25 @@ const log = std.log;
 const cl = @import("cl.zig");
 const sdl = @import("sdl3.zig");
 
-const window_width: i32 = 800;
-const window_height: i32 = 600;
+const window_width: i32 = 1000;
+const window_height: i32 = 1000;
 
 const padding: f32 = 0;
 
 pub fn main() !void {
     const allocator = std.heap.page_allocator;
 
-    const initial_state = try load_initial_state(allocator, "src/initial/planer.txt");
+    const cliArgs = try std.process.argsAlloc(allocator);
+    defer std.process.argsFree(allocator, cliArgs);
+
+    if (cliArgs.len < 2) {
+        std.log.err("Usage: {s} <path-to-initial-state>", .{cliArgs[0]});
+        return;
+    }
+
+    const initial_state_path = cliArgs[1];
+
+    const initial_state = try load_initial_state(allocator, initial_state_path);
 
     const width: u32 = initial_state.width;
     const height: u32 = initial_state.height;
@@ -48,20 +58,24 @@ pub fn main() !void {
     defer output_buffer.free();
 
     const ArgType = cl.CLKernelCall.ArgType;
-    var args: [4]ArgType = .{
+    var clArgs: [4]ArgType = .{
         ArgType{ .buffer = input_buffer },
         ArgType{ .buffer = output_buffer },
         ArgType{ .uint = width },
         ArgType{ .uint = height },
     };
 
+    const local_work_size: usize = 64;
+    const remainder = grid_size % local_work_size;
+    const global_work_size = if (remainder == 0) grid_size else (grid_size + (local_work_size - remainder));
+
     const kernel_call = cl.CLKernelCall{
-        .args = @ptrCast(&args),
+        .args = @ptrCast(&clArgs),
         .kernel = kernel,
         .queue = command_queue,
         .work_dim = 1,
-        .global_work_size = .{ 256, 0, 0 },
-        .local_work_size = .{ 64, 0, 0 },
+        .global_work_size = .{ global_work_size, 0, 0 },
+        .local_work_size = .{ local_work_size, 0, 0 },
     };
 
     if (!sdl.c.SDL_Init(sdl.c.SDL_INIT_VIDEO)) {
@@ -89,10 +103,10 @@ pub fn main() !void {
     }
     defer sdl.c.SDL_DestroyRenderer(renderer);
 
-    var host_input_grid: []bool = try allocator.alloc(bool, grid_size);
+    var host_input_grid: []u32 = try allocator.alloc(u32, grid_size);
     defer allocator.free(host_input_grid);
 
-    var host_output_grid: []bool = try allocator.alloc(bool, grid_size);
+    var host_output_grid: []u32 = try allocator.alloc(u32, grid_size);
     defer allocator.free(host_output_grid);
 
     @memcpy(host_input_grid[0..grid_size], initial_state.grid[0..grid_size]);
@@ -100,48 +114,50 @@ pub fn main() !void {
 
     var event: sdl.c.SDL_Event = undefined;
     var running = true;
+    var paused = false;
+    var mouse_down = false;
     while (running) {
         {
-            try input_buffer.write(@ptrCast(host_input_grid.ptr), command_queue);
-
-            try kernel_call.call();
-
-            try output_buffer.read(@ptrCast(host_output_grid.ptr), command_queue);
-
-            _ = cl.c.clFlush(command_queue.queue);
-            _ = cl.c.clFinish(command_queue.queue);
-
-            @memcpy(host_input_grid[0..grid_size], host_output_grid[0..grid_size]);
-        }
-
-        {
             while (sdl.c.SDL_PollEvent(&event)) {
-                if (event.type == sdl.c.SDL_EVENT_QUIT) {
-                    running = false;
+                switch (event.type) {
+                    sdl.c.SDL_EVENT_QUIT => running = false,
+                    sdl.c.SDL_EVENT_KEY_DOWN => {
+                        switch (event.key.key) {
+                            sdl.c.SDLK_SPACE => {
+                                paused = !paused;
+                            },
+                            sdl.c.SDLK_BACKSPACE => {
+                                @memset(host_input_grid, 0);
+                                @memset(host_output_grid, 0);
+                            },
+                            else => {},
+                        }
+                    },
+                    sdl.c.SDL_EVENT_MOUSE_BUTTON_DOWN => {
+                        mouse_down = true;
+                        toggleCell(event.button.x, event.button.y, host_input_grid, width, height, cell_width, cell_height);
+                    },
+                    sdl.c.SDL_EVENT_MOUSE_BUTTON_UP => {
+                        mouse_down = false;
+                    },
+                    sdl.c.SDL_EVENT_MOUSE_MOTION => {
+                        if (mouse_down) {
+                            toggleCell(event.motion.x, event.motion.y, host_input_grid, width, height, cell_width, cell_height);
+                        }
+                    },
+                    else => {},
                 }
             }
-
-            _ = sdl.c.SDL_Delay(160);
 
             _ = sdl.c.SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
             _ = sdl.c.SDL_RenderClear(renderer);
 
             _ = sdl.c.SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
 
-            var x: f32 = 0;
-            while (x <= window_width) : (x += cell_width) {
-                _ = sdl.c.SDL_RenderLine(renderer, x, 0, x, window_height);
-            }
-
-            var y: f32 = 0;
-            while (y <= window_height) : (y += cell_height) {
-                _ = sdl.c.SDL_RenderLine(renderer, 0, y, window_width, y);
-            }
-
             for (0..height) |row| {
                 for (0..width) |col| {
                     const index = row * width + col;
-                    if (host_input_grid[index]) {
+                    if (host_input_grid[index] == 1) {
                         const rect = sdl.c.SDL_FRect{
                             .x = @as(f32, @floatFromInt(col)) * cell_width + padding,
                             .y = @as(f32, @floatFromInt(row)) * cell_height + padding,
@@ -155,13 +171,26 @@ pub fn main() !void {
 
             _ = sdl.c.SDL_RenderPresent(renderer);
         }
+
+        if (!paused) {
+            try input_buffer.write(@ptrCast(host_input_grid.ptr), command_queue);
+
+            try kernel_call.call();
+
+            try output_buffer.read(@ptrCast(host_output_grid.ptr), command_queue);
+
+            _ = cl.c.clFlush(command_queue.queue);
+            _ = cl.c.clFinish(command_queue.queue);
+
+            @memcpy(host_input_grid[0..grid_size], host_output_grid[0..grid_size]);
+        }
     }
 }
 
 fn load_initial_state(allocator: std.mem.Allocator, path: []const u8) !struct {
     width: u32,
     height: u32,
-    grid: []bool,
+    grid: []u32,
 } {
     const file = try std.fs.cwd().openFile(path, .{});
     defer file.close();
@@ -180,7 +209,7 @@ fn load_initial_state(allocator: std.mem.Allocator, path: []const u8) !struct {
     const n_rows = try std.fmt.parseInt(u32, height_str, 10);
     const size = n_cols * n_rows;
 
-    var grid = try allocator.alloc(bool, size);
+    var grid = try allocator.alloc(u32, size);
 
     var row: u32 = 0;
     while (lines.next()) |line| {
@@ -189,7 +218,7 @@ fn load_initial_state(allocator: std.mem.Allocator, path: []const u8) !struct {
 
         for (0..n_cols) |col| {
             const c = line[col];
-            grid[row * n_cols + col] = c == '1';
+            grid[row * n_cols + col] = if (c == '1') 1 else 0;
         }
 
         row += 1;
@@ -198,4 +227,13 @@ fn load_initial_state(allocator: std.mem.Allocator, path: []const u8) !struct {
     if (row != n_rows) return error.MissingGridRows;
 
     return .{ .width = n_cols, .height = n_rows, .grid = grid };
+}
+fn toggleCell(x: f32, y: f32, grid: []u32, width: u32, height: u32, cell_width: f32, cell_height: f32) void {
+    const col: u32 = @intFromFloat(x / cell_width);
+    const row: u32 = @intFromFloat(y / cell_height);
+
+    if (col < width and row < height) {
+        const idx = row * width + col;
+        grid[idx] = if (grid[idx] == 1) 0 else 1;
+    }
 }

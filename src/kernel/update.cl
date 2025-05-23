@@ -1,29 +1,27 @@
-kernel void update(global const bool* grid, global bool* next_grid, const int width, const int height) {
-  const int x = get_global_id(0);
-  const int y = get_global_id(1);
-  const int idx = y * width + x;
+__kernel void update(__global const uint* in, __global uint* out, uint width, uint height) {
+    int gid = get_global_id(0);
+    int x = gid % width;
+    int y = gid / width;
 
-  if (x >= width || y >= height || x < 0 || y < 0) return;
+    if (x >= width || y >= height) return;
 
-  printf("%d %d: %d\n", x, y, (int)(grid[idx]));
-
-  int count = 0;
-  for (int oy = -1; oy <= 1; oy++) {
-    for (int ox = -1; ox <= 1; ox++) {
-      if (ox == 0 && oy == 0)
-        continue;
-
-      int nx = (x + ox + width) % width;
-      int ny = (y + oy + height) % height;
-      int nidx = ny * width + nx;
-
-      if (grid[nidx])
-        count += grid[nidx];
+    int count = 0;
+    for (int dy = -1; dy <= 1; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+            if (dx == 0 && dy == 0) continue;
+            int nx = x + dx;
+            int ny = y + dy;
+            if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                count += in[ny * width + nx];
+            }
+        }
     }
-  }
 
-  bool cell = grid[idx];
-  bool new_state = (cell && (count == 2 || count == 3)) || (!cell && count == 3);
-  next_grid[idx] = new_state;
+    int index = y * width + x;
+    uint cell = in[index];
+    if (cell == 1) {
+        out[index] = (count == 2 || count == 3) ? 1 : 0;
+    } else {
+        out[index] = (count == 3) ? 1 : 0;
+    }
 }
-
