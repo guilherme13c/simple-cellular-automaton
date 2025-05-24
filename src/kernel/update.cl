@@ -1,4 +1,4 @@
-__kernel void update(__global const uint* in, __global uint* out, uint width, uint height) {
+__kernel void update(__global ushort* grid, uint width, uint height) {
     int gid = get_global_id(0);
     int x = gid % width;
     int y = gid / width;
@@ -12,16 +12,16 @@ __kernel void update(__global const uint* in, __global uint* out, uint width, ui
             int nx = x + dx;
             int ny = y + dy;
             if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-                count += in[ny * width + nx];
+                count += grid[ny * width + nx];
             }
         }
     }
 
     int index = y * width + x;
-    uint cell = in[index];
+    uint cell = grid[index];
     if (cell == 1) {
-        out[index] = (count == 2 || count == 3) ? 1 : 0;
+        grid[index] = (count == 2 || count == 3) ? 1 : 0;
     } else {
-        out[index] = (count == 3) ? 1 : 0;
+        grid[index] = (count == 3) ? 1 : 0;
     }
 }

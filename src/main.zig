@@ -7,8 +7,6 @@ const sdl = @import("sdl3.zig");
 const window_width: i32 = 1000;
 const window_height: i32 = 1000;
 
-const padding: f32 = 0;
-
 pub fn main() !void {
     const allocator = std.heap.page_allocator;
 
@@ -51,16 +49,12 @@ pub fn main() !void {
     const kernel = try cl.CLKernel.init(program, "update");
     defer kernel.free();
 
-    const input_buffer = try cl.CLBuffer.init(grid_size * @sizeOf(u32), ctx);
-    defer input_buffer.free();
-
-    const output_buffer = try cl.CLBuffer.init(grid_size * @sizeOf(u32), ctx);
-    defer output_buffer.free();
+    const grid_buffer = try cl.CLBuffer.init(grid_size * @sizeOf(u16), ctx);
+    defer grid_buffer.free();
 
     const ArgType = cl.CLKernelCall.ArgType;
-    var clArgs: [4]ArgType = .{
-        ArgType{ .buffer = input_buffer },
-        ArgType{ .buffer = output_buffer },
+    var clArgs: [3]ArgType = .{
+        ArgType{ .buffer = grid_buffer },
         ArgType{ .uint = width },
         ArgType{ .uint = height },
     };
@@ -103,13 +97,10 @@ pub fn main() !void {
     }
     defer sdl.c.SDL_DestroyRenderer(renderer);
 
-    var host_input_grid: []u32 = try allocator.alloc(u32, grid_size);
-    defer allocator.free(host_input_grid);
+    var grid: []u16 = try allocator.alloc(u16, grid_size);
+    defer allocator.free(grid);
 
-    var host_output_grid: []u32 = try allocator.alloc(u32, grid_size);
-    defer allocator.free(host_output_grid);
-
-    @memcpy(host_input_grid[0..grid_size], initial_state.grid[0..grid_size]);
+    @memcpy(grid[0..grid_size], initial_state.grid[0..grid_size]);
     allocator.free(initial_state.grid);
 
     var event: sdl.c.SDL_Event = undefined;
@@ -127,17 +118,16 @@ pub fn main() !void {
                                 paused = !paused;
                             },
                             sdl.c.SDLK_BACKSPACE => {
-                                @memset(host_input_grid, 0);
-                                @memset(host_output_grid, 0);
+                                @memset(grid, 0);
                             },
                             else => {},
                         }
                     },
                     sdl.c.SDL_EVENT_MOUSE_BUTTON_DOWN => {
-                        const val: u32 = if (event.button.button == sdl.c.SDL_BUTTON_LEFT) 1 else 0;
+                        const val: u16 = if (event.button.button == sdl.c.SDL_BUTTON_LEFT) 1 else 0;
 
                         mouse_down = true;
-                        setCellValue(event.button.x, event.button.y, host_input_grid, width, height, cell_width, cell_height, val);
+                        setCellValue(event.button.x, event.button.y, grid, width, height, cell_width, cell_height, val);
                     },
                     sdl.c.SDL_EVENT_MOUSE_BUTTON_UP => {
                         mouse_down = false;
@@ -145,9 +135,9 @@ pub fn main() !void {
                     sdl.c.SDL_EVENT_MOUSE_MOTION => {
                         if (!mouse_down) continue;
 
-                        const val: u32 = if (event.button.button == sdl.c.SDL_BUTTON_LEFT) 1 else 0;
+                        const val: u16 = if (event.button.button == sdl.c.SDL_BUTTON_LEFT) 1 else 0;
 
-                        setCellValue(event.motion.x, event.motion.y, host_input_grid, width, height, cell_width, cell_height, val);
+                        setCellValue(event.motion.x, event.motion.y, grid, width, height, cell_width, cell_height, val);
                     },
                     else => {},
                 }
@@ -161,12 +151,12 @@ pub fn main() !void {
             for (0..height) |row| {
                 for (0..width) |col| {
                     const index = row * width + col;
-                    if (host_input_grid[index] == 1) {
+                    if (grid[index] == 1) {
                         const rect = sdl.c.SDL_FRect{
-                            .x = @as(f32, @floatFromInt(col)) * cell_width + padding,
-                            .y = @as(f32, @floatFromInt(row)) * cell_height + padding,
-                            .w = cell_width - 2 * padding,
-                            .h = cell_height - 2 * padding,
+                            .x = @as(f32, @floatFromInt(col)) * cell_width,
+                            .y = @as(f32, @floatFromInt(row)) * cell_height,
+                            .w = cell_width,
+                            .h = cell_height,
                         };
                         _ = sdl.c.SDL_RenderFillRect(renderer, &rect);
                     }
@@ -177,16 +167,14 @@ pub fn main() !void {
         }
 
         if (!paused) {
-            try input_buffer.write(@ptrCast(host_input_grid.ptr), command_queue);
+            try grid_buffer.write(@ptrCast(grid.ptr), command_queue);
 
             try kernel_call.call();
 
-            try output_buffer.read(@ptrCast(host_output_grid.ptr), command_queue);
+            try grid_buffer.read(@ptrCast(grid.ptr), command_queue);
 
             _ = cl.c.clFlush(command_queue.queue);
             _ = cl.c.clFinish(command_queue.queue);
-
-            @memcpy(host_input_grid[0..grid_size], host_output_grid[0..grid_size]);
         }
     }
 }
@@ -194,7 +182,7 @@ pub fn main() !void {
 fn load_initial_state(allocator: std.mem.Allocator, path: []const u8) !struct {
     width: u32,
     height: u32,
-    grid: []u32,
+    grid: []u16,
 } {
     const file = try std.fs.cwd().openFile(path, .{});
     defer file.close();
@@ -213,7 +201,7 @@ fn load_initial_state(allocator: std.mem.Allocator, path: []const u8) !struct {
     const n_rows = try std.fmt.parseInt(u32, height_str, 10);
     const size = n_cols * n_rows;
 
-    var grid = try allocator.alloc(u32, size);
+    var grid = try allocator.alloc(u16, size);
 
     var row: u32 = 0;
     while (lines.next()) |line| {
@@ -232,7 +220,8 @@ fn load_initial_state(allocator: std.mem.Allocator, path: []const u8) !struct {
 
     return .{ .width = n_cols, .height = n_rows, .grid = grid };
 }
-fn setCellValue(x: f32, y: f32, grid: []u32, width: u32, height: u32, cell_width: f32, cell_height: f32, value: u32) void {
+
+fn setCellValue(x: f32, y: f32, grid: []u16, width: u32, height: u32, cell_width: f32, cell_height: f32, value: u16) void {
     const col: u32 = @intFromFloat(x / cell_width);
     const row: u32 = @intFromFloat(y / cell_height);
 

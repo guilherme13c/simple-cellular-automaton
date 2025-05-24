@@ -246,6 +246,7 @@ pub const CLKernelCall = struct {
     pub const ArgType = union(enum) {
         int: i32,
         uint: u32,
+        ushort: u16,
         float: f32,
         buffer: CLBuffer,
     };
@@ -268,6 +269,11 @@ pub const CLKernelCall = struct {
                 },
                 .uint => |v| {
                     if (c.clSetKernelArg(self.kernel.kernel, @intCast(i), @sizeOf(u32), &v) != c.CL_SUCCESS) {
+                        return CLError.SetKernelArgFailed;
+                    }
+                },
+                .ushort => |v| {
+                    if (c.clSetKernelArg(self.kernel.kernel, @intCast(i), @sizeOf(u16), &v) != c.CL_SUCCESS) {
                         return CLError.SetKernelArgFailed;
                     }
                 },
