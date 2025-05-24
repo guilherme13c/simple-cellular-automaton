@@ -134,16 +134,20 @@ pub fn main() !void {
                         }
                     },
                     sdl.c.SDL_EVENT_MOUSE_BUTTON_DOWN => {
+                        const val: u32 = if (event.button.button == sdl.c.SDL_BUTTON_LEFT) 1 else 0;
+
                         mouse_down = true;
-                        toggleCell(event.button.x, event.button.y, host_input_grid, width, height, cell_width, cell_height);
+                        setCellValue(event.button.x, event.button.y, host_input_grid, width, height, cell_width, cell_height, val);
                     },
                     sdl.c.SDL_EVENT_MOUSE_BUTTON_UP => {
                         mouse_down = false;
                     },
                     sdl.c.SDL_EVENT_MOUSE_MOTION => {
-                        if (mouse_down) {
-                            toggleCell(event.motion.x, event.motion.y, host_input_grid, width, height, cell_width, cell_height);
-                        }
+                        if (!mouse_down) continue;
+
+                        const val: u32 = if (event.button.button == sdl.c.SDL_BUTTON_LEFT) 1 else 0;
+
+                        setCellValue(event.motion.x, event.motion.y, host_input_grid, width, height, cell_width, cell_height, val);
                     },
                     else => {},
                 }
@@ -228,12 +232,12 @@ fn load_initial_state(allocator: std.mem.Allocator, path: []const u8) !struct {
 
     return .{ .width = n_cols, .height = n_rows, .grid = grid };
 }
-fn toggleCell(x: f32, y: f32, grid: []u32, width: u32, height: u32, cell_width: f32, cell_height: f32) void {
+fn setCellValue(x: f32, y: f32, grid: []u32, width: u32, height: u32, cell_width: f32, cell_height: f32, value: u32) void {
     const col: u32 = @intFromFloat(x / cell_width);
     const row: u32 = @intFromFloat(y / cell_height);
 
     if (col < width and row < height) {
         const idx = row * width + col;
-        grid[idx] = if (grid[idx] == 1) 0 else 1;
+        grid[idx] = value;
     }
 }
